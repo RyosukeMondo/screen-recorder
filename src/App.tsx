@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 
 // Define TypeScript interfaces for type safety
@@ -26,6 +26,50 @@ function App() {
   const [status, setStatus] = useState<string>('Ready');
   const [error, setError] = useState<string>('');
   const [storedVideos, setStoredVideos] = useState<VideoData[]>([]);
+  
+  /**
+   * Get all videos metadata from IndexedDB
+   */
+  const getAllVideosMetadata = useCallback(async (): Promise<VideoData[]> => {
+    try {
+      const db = await openDatabase();
+      const transaction = db.transaction(['videos'], 'readonly');
+      const store = transaction.objectStore('videos');
+      const request = store.getAll();
+      
+      return new Promise((resolve, reject) => {
+        request.onsuccess = () => {
+          const videos = request.result as VideoData[];
+          resolve(videos.map(video => ({
+            id: video.id,
+            datetime: video.datetime,
+            title: video.title,
+          })));
+        };
+        
+        request.onerror = () => {
+          reject(request.error);
+        };
+      });
+    } catch (error) {
+      console.error('Error getting videos from IndexedDB:', error);
+      setError(`Failed to retrieve videos: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  }, []);
+  
+  /**
+   * Display stored videos
+   */
+  const displayStoredVideos = useCallback(async () => {
+    try {
+      const videos = await getAllVideosMetadata();
+      setStoredVideos(videos);
+    } catch (error) {
+      console.error('Error displaying stored videos:', error);
+      setError(`Failed to display videos: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [getAllVideosMetadata]);
   
   // References for recording
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -70,7 +114,7 @@ function App() {
   useEffect(() => {
     // Initialize database and load videos
     displayStoredVideos();
-  }, []);
+  }, [displayStoredVideos]);
 
   /**
    * Start screen recording
@@ -278,44 +322,9 @@ function App() {
     }
   };
   
-  /**
-   * Get all stored videos metadata
-   */
-  const getAllVideosMetadata = async (): Promise<VideoData[]> => {
-    try {
-      const db = await openDatabase();
-      const transaction = db.transaction(['videos'], 'readonly');
-      const store = transaction.objectStore('videos');
-      const request = store.getAll();
-      
-      return new Promise((resolve, reject) => {
-        request.onsuccess = () => {
-          resolve(request.result);
-        };
-        
-        request.onerror = () => {
-          reject(request.error);
-        };
-      });
-    } catch (error) {
-      console.error('Error getting videos from IndexedDB:', error);
-      setError(`Failed to retrieve videos: ${error instanceof Error ? error.message : String(error)}`);
-      return [];
-    }
-  };
+  // getAllVideosMetadata function is now defined at the top of the component
   
-  /**
-   * Display stored videos
-   */
-  const displayStoredVideos = async () => {
-    try {
-      const videos = await getAllVideosMetadata();
-      setStoredVideos(videos);
-    } catch (error) {
-      console.error('Error displaying stored videos:', error);
-      setError(`Failed to display videos: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
+
   
   /**
    * Remove video from IndexedDB
