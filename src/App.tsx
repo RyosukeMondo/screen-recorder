@@ -21,6 +21,7 @@ function App() {
   const [status, setStatus] = useState<string>('Ready');
   const [error, setError] = useState<string>('');
   const [storedVideos, setStoredVideos] = useState<VideoData[]>([]);
+  const [selectedMicrophoneId, setSelectedMicrophoneId] = useState<string | null>(null);
   // FFmpeg encoding is now always used for MP4 conversion
   // Global FFmpeg state is no longer needed as we track per video
   
@@ -370,8 +371,13 @@ function App() {
       const videoInfo: VideoInfo = {
         videoId,
         beginTime,
-        title: `Screen Recording - ${beginTime}`,
+        title: `Screen Recording${selectedMicrophoneId ? ' with Microphone' : ''} - ${beginTime}`,
       };
+      
+      // Set microphone device if selected
+      if (selectedMicrophoneId) {
+        mediaCaptureRef.current.setAudioDevice(selectedMicrophoneId);
+      }
       
       // Start recording using the media capture service
       await mediaCaptureRef.current.startRecording(videoInfo);
@@ -523,6 +529,8 @@ function App() {
           formatTime={formatTime}
           onStartRecording={startRecording}
           onStopRecording={stopRecording}
+          mediaCaptureService={mediaCaptureRef.current}
+          onMicrophoneSelected={(deviceId) => setSelectedMicrophoneId(deviceId)}
         />
         
         <div className="instructions">

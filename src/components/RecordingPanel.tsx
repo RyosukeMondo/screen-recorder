@@ -1,4 +1,6 @@
 import React from 'react';
+import MicrophoneSelector from './MicrophoneSelector';
+import { MediaCaptureService } from '../services/media-capture.service';
 
 interface RecordingPanelProps {
   status: string;
@@ -8,6 +10,8 @@ interface RecordingPanelProps {
   formatTime: (time: number) => string;
   onStartRecording: () => void;
   onStopRecording: () => void;
+  mediaCaptureService: MediaCaptureService;
+  onMicrophoneSelected?: (deviceId: string | null) => void;
 }
 
 /**
@@ -21,7 +25,9 @@ const RecordingPanel: React.FC<RecordingPanelProps> = ({
   error,
   formatTime,
   onStartRecording,
-  onStopRecording
+  onStopRecording,
+  mediaCaptureService,
+  onMicrophoneSelected
 }) => {
   return (
     <div className="recorder-container">
@@ -39,6 +45,14 @@ const RecordingPanel: React.FC<RecordingPanelProps> = ({
       </div>
 
       {error && <div className="error-message">{error}</div>}
+
+      <div className="mic-controls">
+        <MicrophoneSelector 
+          mediaCaptureService={mediaCaptureService}
+          disabled={isRecording} 
+          onDeviceSelected={onMicrophoneSelected}
+        />
+      </div>
 
       <div className="controls">
         {!isRecording ? (
