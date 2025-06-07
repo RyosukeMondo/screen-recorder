@@ -35,6 +35,7 @@ export interface AudioDeviceOption {
 /**
  * Service responsible for screen media capture operations
  * Handles MediaRecorder lifecycle and screen capture streams
+ * Uses EventEmitter to provide standardized event handling
  */
 export class MediaCaptureService {
   private recorder: MediaRecorder | null = null;
@@ -42,8 +43,7 @@ export class MediaCaptureService {
   private micStream: MediaStream | null = null;
   private chunks: Blob[] = [];
   private selectedAudioDeviceId: string | null = null;
-  // Type for our event handlers - parameterized by event type
-  private eventListeners: Map<string, Array<(...args: unknown[]) => void>> = new Map();
+  private eventEmitter = new EventEmitter();
 
   /**
    * Register event listener for MediaCaptureService events
@@ -53,12 +53,10 @@ export class MediaCaptureService {
   public on<E extends MediaCaptureEventType>(
     event: E, 
     listener: (...args: E extends keyof MediaCaptureEventMap ? MediaCaptureEventMap[E] : never[]) => void
-  ): void {
-    if (!this.eventListeners.has(event)) {
-      this.eventListeners.set(event, []);
-    }
-    // Type assertion needed for generic event handler system
-    this.eventListeners.get(event)?.push(listener as (...args: unknown[]) => void);
+  ): this {
+    // Use composition instead of inheritance with type assertion to ensure compatibility
+    this.eventEmitter.on(event, listener as unknown as (...args: unknown[]) => void);
+    return this;
   }
 
   /**
@@ -69,34 +67,25 @@ export class MediaCaptureService {
   public off<E extends MediaCaptureEventType>(
     event: E, 
     listener: (...args: E extends keyof MediaCaptureEventMap ? MediaCaptureEventMap[E] : never[]) => void
-  ): void {
-    const listeners = this.eventListeners.get(event);
-    if (!listeners) return;
-
-    // Type assertion needed for generic event handler system
-    const index = listeners.indexOf(listener as (...args: unknown[]) => void);
-    if (index !== -1) {
-      listeners.splice(index, 1);
-    }
+  ): this {
+    // Use composition instead of inheritance with type assertion to ensure compatibility
+    this.eventEmitter.off(event, listener as unknown as (...args: unknown[]) => void);
+    return this;
   }
   
   /**
    * Emit an event with provided arguments
+   * Type-safe wrapper around EventEmitter's emit method
+   * 
    * @param event Event type to emit
-   * @param args Arguments to pass to listeners
+   * @param args Arguments to pass to event handlers
+   * @private Internal method for emitting events
    */
-  private emit<E extends MediaCaptureEventType>(
-    event: E, 
-    ...args: E extends keyof MediaCaptureEventMap ? MediaCaptureEventMap[E] : never[]
-  ): void {
-    const listeners = this.eventListeners.get(event);
-    if (!listeners) return;
-    
-    listeners.forEach(listener => {
-      listener(...args);
-    });
+  private emit<E extends MediaCaptureEventType>(event: E, ...args: E extends keyof MediaCaptureEventMap ? MediaCaptureEventMap[E] : never[]): boolean {
+    // Use composition instead of inheritance
+    return this.eventEmitter.emit(event, ...args);
   }
-  
+
   /**
    * Check if recording is currently in progress
    */
@@ -300,7 +289,7 @@ export class MediaCaptureService {
       this.recorder = new MediaRecorder(combinedStream, {
         mimeType: this.getSupportedMimeType(),
         videoBitsPerSecond: 5000000, // 5 Mbps for better quality
-        audioBitsPerSecond: 256000   // 256 kbps for higher quality audio
+        audioBitsPerSecond: 256000   // 256 kilobits per second for higher quality audio
       });
       
       console.log(`Using MIME type: ${this.getSupportedMimeType()}`);
