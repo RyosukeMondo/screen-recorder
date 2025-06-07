@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
-import { VideoProcessorService } from './services/videoProcessor';
-import type { ProgressCallback } from './services/videoProcessor';
+import { VideoProcessorService } from './services/video-processor.service';
+import type { ProgressCallback } from './services/encoding-job';
 
 
 // Define TypeScript interfaces for type safety
@@ -32,6 +32,7 @@ function App() {
   const [useFFmpeg, setUseFFmpeg] = useState<boolean>(false);
   const [ffmpegProgress, setFfmpegProgress] = useState<number>(0);
   const [isProcessingFFmpeg, setIsProcessingFFmpeg] = useState<boolean>(false);
+  const [ffmpegCancellable, setFfmpegCancellable] = useState<boolean>(false);
   
   // Services
   const videoProcessorRef = useRef<VideoProcessorService>(new VideoProcessorService());
@@ -229,12 +230,33 @@ function App() {
   }, []);
 
   /**
+   * Handle FFmpeg processing cancellation
+   */
+  const handleFFmpegCancel = useCallback(() => {
+    if (videoProcessorRef.current) {
+      videoProcessorRef.current.cancelProcessing();
+      setStatus('Cancelling FFmpeg processing...');
+    }
+  }, []);
+
+  /**
+   * Handle when FFmpeg processing is cancelled
+   */
+  const handleFFmpegCancelled = useCallback(() => {
+    setIsProcessingFFmpeg(false);
+    setFfmpegCancellable(false);
+    setStatus('FFmpeg processing cancelled');
+    setTimeout(() => setStatus('Ready'), 3000);
+  }, []);
+
+  /**
    * Download recorded video as MP4
    */
   const downloadMP4 = async (chunks: Blob[], _videoId: string, title: string) => {
     try {
       if (useFFmpeg) {
         setIsProcessingFFmpeg(true);
+        setFfmpegCancellable(true);
         setFfmpegProgress(0);
         setStatus('Processing with FFmpeg...');
       } else {
@@ -246,17 +268,27 @@ function App() {
         chunks, 
         title, 
         useFFmpeg, 
-        useFFmpeg ? handleFFmpegProgress : undefined
+        useFFmpeg ? handleFFmpegProgress : undefined,
+        useFFmpeg ? handleFFmpegCancelled : undefined
       );
       
       setIsProcessingFFmpeg(false);
+      setFfmpegCancellable(false);
       setStatus('Ready');
       setError('');
     } catch (error) {
       console.error('Error downloading video:', error);
       setIsProcessingFFmpeg(false);
-      setError(`Failed to download video: ${error instanceof Error ? error.message : String(error)}`);
-      setStatus('Error');
+      setFfmpegCancellable(false);
+      
+      // Don't show error message if operation was cancelled (it's expected)
+      if (error instanceof Error && error.message === 'Operation cancelled') {
+        setStatus('Processing cancelled');
+        setTimeout(() => setStatus('Ready'), 3000);
+      } else {
+        setError(`Failed to download video: ${error instanceof Error ? error.message : String(error)}`);
+        setStatus('Error');
+      }
     }
   };
   
@@ -423,6 +455,17 @@ function App() {
                     style={{ width: `${ffmpegProgress * 100}%` }}
                   ></div>
                 </div>
+                
+                {/* Cancel button for FFmpeg processing */}
+                {ffmpegCancellable && (
+                  <button
+                    className="ffmpeg-cancel-button"
+                    onClick={handleFFmpegCancel}
+                    title="Cancel FFmpeg processing"
+                  >
+                    Cancel Processing
+                  </button>
+                )}
               </div>
             )}
           </div>

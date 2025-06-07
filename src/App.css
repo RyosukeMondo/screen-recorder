@@ -145,6 +145,30 @@ main {
   animation: progress-bar-stripes 1s linear infinite;
 }
 
+.ffmpeg-cancel-button {
+  display: block;
+  margin: 10px auto 0;
+  padding: 8px 16px;
+  background-color: #f44336;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.ffmpeg-cancel-button:hover {
+  background-color: #d32f2f;
+}
+
+.ffmpeg-cancel-button:active {
+  background-color: #b71c1c;
+  transform: translateY(1px);
+}
+
 @keyframes progress-bar-stripes {
   from { background-position: 1rem 0; }
   to { background-position: 0 0; }
