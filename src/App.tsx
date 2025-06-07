@@ -19,7 +19,7 @@ function App() {
   const [status, setStatus] = useState<string>('Ready');
   const [error, setError] = useState<string>('');
   const [storedVideos, setStoredVideos] = useState<VideoData[]>([]);
-  const [useFFmpeg, setUseFFmpeg] = useState<boolean>(false);
+  // FFmpeg encoding is now always used for MP4 conversion
   // Global FFmpeg state is no longer needed as we track per video
   
   // Services
@@ -85,7 +85,8 @@ function App() {
   }, []);
 
   /**
-   * Process video to MP4 using FFmpeg
+   * Manually process existing video to MP4 using FFmpeg
+   * This function is for converting videos that weren't automatically converted
    */
   const processToMP4 = useCallback(async (videoId: string) => {
     try {
@@ -123,7 +124,7 @@ function App() {
       await videoProcessorRef.current.downloadMP4(
         videoData.chunks,
         videoData.title,
-        true, // useFFmpeg
+        true, // Always use FFmpeg for MP4 conversion
         progressCallback,
         cancelCallback
       );
@@ -156,12 +157,83 @@ function App() {
   }, []);
   
   /**
-   * Download recorded video as MP4 (after recording)
+   * Handle video after recording is stopped
+   * Downloads WebM immediately and schedules MP4 conversion
    */
-  const downloadMP4 = useCallback(async (chunks: Blob[], _videoId: string, title: string) => {
+  const downloadMP4 = useCallback(async (chunks: Blob[], videoId: string, title: string) => {
     try {
-      // After recording, we now just download as WebM
+      // First, download as WebM for immediate access
       downloadWebM(chunks, title);
+      
+      // Mark this video for auto-conversion after storage is ready
+      setTimeout(async () => {
+        try {
+          const videoData = await storageServiceRef.current.getVideo(videoId);
+          
+          if (!videoData || !videoData.chunks) {
+            console.error('Video data not found for auto-conversion');
+            return;
+          }
+          
+          // Update processing state for this video
+          setStoredVideos(prev => prev.map(v => 
+            v.id === videoId ? { ...v, isProcessing: true, processingProgress: 0 } : v
+          ));
+          
+          setStatus('Auto-processing with FFmpeg...');
+          
+          // Create progress callback specific to this video
+          const progressCallback = (progress: number) => {
+            setStoredVideos(prev => prev.map(v => 
+              v.id === videoId ? { ...v, processingProgress: progress } : v
+            ));
+          };
+          
+          // Create cancellation callback
+          const cancelCallback = () => {
+            setStoredVideos(prev => prev.map(v => 
+              v.id === videoId ? { ...v, isProcessing: false, processingProgress: 0 } : v
+            ));
+            setStatus('FFmpeg processing cancelled');
+            setTimeout(() => setStatus('Ready'), 3000);
+          };
+          
+          // Process video with FFmpeg
+          await videoProcessorRef.current.downloadMP4(
+            videoData.chunks,
+            videoData.title,
+            true, // Always use FFmpeg for MP4 conversion
+            progressCallback,
+            cancelCallback
+          );
+          
+          // Reset processing state
+          setStoredVideos(prev => prev.map(v => 
+            v.id === videoId ? { ...v, isProcessing: false, processingProgress: 1 } : v
+          ));
+          
+          setStatus('MP4 Download complete');
+          setTimeout(() => setStatus('Ready'), 3000);
+          
+          // After a moment, reset the progress display
+          setTimeout(() => {
+            setStoredVideos(prev => prev.map(v => 
+              v.id === videoId ? { ...v, processingProgress: 0 } : v
+            ));
+          }, 5000);
+          
+        } catch (error) {
+          console.error('Error in auto MP4 conversion:', error);
+          setError(`Failed to auto-convert video: ${error instanceof Error ? error.message : String(error)}`);
+          setStatus('Error');
+          
+          // Reset processing state on error
+          setStoredVideos(prev => prev.map(v => 
+            v.id === videoId ? { ...v, isProcessing: false, processingProgress: 0 } : v
+          ));
+        }
+      }, 1000); // Short delay to ensure storage is ready
+      
     } catch (error) {
       console.error('Error in downloadMP4:', error);
       setError(`Failed to process video: ${error instanceof Error ? error.message : String(error)}`);
@@ -423,19 +495,7 @@ function App() {
               </button>
             )}
             
-            <div className="encoding-options">
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={useFFmpeg}
-                  onChange={(e) => setUseFFmpeg(e.target.checked)}
-                  disabled={isRecording}
-                />
-                <span className="toggle-slider"></span>
-                <span className="toggle-label">Use FFmpeg Encoding</span>
-              </label>
-              {useFFmpeg && <div className="encoding-note">Using FFmpeg for better compatibility (may take longer)</div>}
-            </div>
+            {/* FFmpeg encoding is now always used automatically */}
           </div>
         </div>
         
@@ -445,7 +505,8 @@ function App() {
             <li>Click "Start Recording"</li>
             <li>Choose what you want to share (screen, window, or tab)</li>
             <li>Click "Stop Recording" when finished</li>
-            <li>The MP4 file will be automatically downloaded and saved locally</li>
+            <li>WebM file will download immediately</li>
+            <li>MP4 conversion will start automatically</li>
           </ol>
           <p className="note">Note: Keep this tab open while recording. Closing or navigating away will stop the recording.</p>
         </div>
