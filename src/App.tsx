@@ -5,6 +5,7 @@ import { StorageService } from './services/storage';
 import { MediaCaptureService, MediaCaptureEvents } from './services/media-capture.service';
 import type { VideoInfo, VideoData } from './types/recording';
 import StoredVideosList from './components/StoredVideosList';
+import RecordingPanel from './components/RecordingPanel';
 
 
 // Using VideoInfo and VideoData interfaces from './types/recording'
@@ -461,44 +462,15 @@ function App() {
       </header>
 
       <main>
-        <div className="recorder-container">
-          <div className="status-panel">
-            <div className="status-indicator">
-              <div className={`status-dot ${isRecording ? 'recording' : status.toLowerCase().replace(/\s+/g, '-')}`}></div>
-              <span>{status}</span>
-              
-              {isRecording && (
-                <div className="recording-time">
-                  Recording time: {formatTime(recordingTime)}
-                </div>
-              )}
-            </div>
-            
-            {/* Global processing status is now shown per video */}
-          </div>
-
-          {error && <div className="error-message">{error}</div>}
-
-          <div className="controls">
-            {!isRecording ? (
-              <button 
-                className="record-button"
-                onClick={startRecording} 
-              >
-                Start Recording2
-              </button>
-            ) : (
-              <button 
-                className="stop-button"
-                onClick={stopRecording}
-              >
-                Stop Recording
-              </button>
-            )}
-            
-            {/* FFmpeg encoding is now always used automatically */}
-          </div>
-        </div>
+        <RecordingPanel
+          status={status}
+          isRecording={isRecording}
+          recordingTime={recordingTime}
+          error={error}
+          formatTime={formatTime}
+          onStartRecording={startRecording}
+          onStopRecording={stopRecording}
+        />
         
         <div className="instructions">
           <h3>How to Use:</h3>
