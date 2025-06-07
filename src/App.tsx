@@ -7,6 +7,7 @@ import type { VideoInfo, VideoData } from './types/recording';
 import StoredVideosList from './components/StoredVideosList';
 import RecordingPanel from './components/RecordingPanel';
 import Instructions from './components/Instructions';
+import BookmarkletHelper from './components/BookmarkletHelper';
 
 // Using VideoInfo and VideoData interfaces from './types/recording'
 
@@ -545,6 +546,7 @@ function App() {
             onEditTitle={updateVideoTitle}
           />
         </div>
+        <BookmarkletHelper />
       </main>
 
       <footer>
