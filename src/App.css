@@ -1,10 +1,17 @@
 /* Base styling */
+* {
+  box-sizing: border-box;
+}
+
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   margin: 0;
   padding: 0;
   color: #333;
-  background-color: #f9f9f9;
+  background-color: #f5f7fa;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
 }
 
 /* App container */
@@ -13,6 +20,9 @@ body {
   max-width: 800px;
   margin: 0 auto;
   padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 /* Header */
@@ -35,25 +45,33 @@ body {
 /* Main content */
 main {
   background-color: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  padding: 32px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 /* Recorder container */
 .recorder-container {
-  margin-bottom: 20px;
+  margin-bottom: 28px;
+  width: 100%;
+  max-width: 650px;
 }
 
 /* Status panel */
 .status-panel {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  padding: 15px;
-  background-color: #f8f9fa;
-  border-radius: 6px;
+  justify-content: center;
+  margin-bottom: 24px;
+  padding: 18px;
+  background-color: #f0f4f8;
+  border-radius: 8px;
+  width: 100%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .status-indicator {
@@ -113,15 +131,17 @@ button {
   font-size: 1rem;
   font-weight: 500;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
 .record-button {
   background-color: #1a73e8;
   color: white;
-  min-width: 160px;
+  min-width: 180px;
+  letter-spacing: 0.5px;
 }
 
 .record-button:hover {
@@ -131,7 +151,8 @@ button {
 .stop-button {
   background-color: #f44336;
   color: white;
-  min-width: 160px;
+  min-width: 180px;
+  letter-spacing: 0.5px;
 }
 
 .stop-button:hover {
@@ -140,11 +161,13 @@ button {
 
 /* Instructions section */
 .instructions {
-  margin: 30px 0;
-  padding: 15px;
+  margin: 34px 0;
+  padding: 20px;
   background-color: #e8f4fd;
-  border-radius: 6px;
+  border-radius: 8px;
   border-left: 4px solid #1a73e8;
+  width: 100%;
+  max-width: 650px;
 }
 
 .instructions h3 {
@@ -169,9 +192,11 @@ button {
 
 /* Stored Videos Section */
 .stored-videos-container {
-  margin-top: 30px;
-  padding-top: 20px;
+  margin-top: 36px;
+  padding-top: 24px;
   border-top: 1px solid #e0e0e0;
+  width: 100%;
+  max-width: 650px;
 }
 
 .stored-videos-container h3 {
@@ -190,9 +215,15 @@ button {
   justify-content: space-between;
   align-items: center;
   background-color: #f8f9fa;
-  padding: 12px 15px;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 16px 20px;
+  border-radius: 8px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.video-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.12);
 }
 
 .video-info {
@@ -240,10 +271,12 @@ button {
 /* Footer */
 footer {
   text-align: center;
-  margin-top: 40px;
-  padding-top: 20px;
+  margin-top: 48px;
+  padding: 24px 0;
   color: #666;
   font-size: 0.9rem;
+  width: 100%;
+  border-top: 1px solid #eaeaea;
 }
 
 /* Animation for recording indicator */
