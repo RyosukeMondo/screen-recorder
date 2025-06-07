@@ -47,7 +47,7 @@ const RecordingPanel: React.FC<RecordingPanelProps> = ({
             onClick={onStartRecording} 
             disabled={status !== 'Ready'}
           >
-            Start Recording1
+            Start Recording
           </button>
         ) : (
           <button 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { RecorderService } from '../services/recorder';
 import { StorageService } from '../services/storage';
-import { VideoProcessorService } from '../services/videoProcessor';
+import { VideoProcessorService } from '../services/video-processor.service';
 import type { VideoData, VideoInfo } from '../types/recording';
 
 /**
