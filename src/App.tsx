@@ -1,22 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import { VideoProcessorService } from './services/video-processor.service';
+import { StorageService } from './services/storage';
+import { MediaCaptureService, MediaCaptureEvents } from './services/media-capture.service';
 import type { ProgressCallback } from './services/encoding-job';
+import type { VideoInfo, VideoData } from './types/recording';
 
 
-// Define TypeScript interfaces for type safety
-interface VideoInfo {
-  videoId: string;
-  beginTime: string;
-  title: string;
-}
-
-interface VideoData {
-  id: string;
-  datetime: string;
-  title: string;
-  chunks?: Blob[];
-}
+// Using VideoInfo and VideoData interfaces from './types/recording'
 
 /**
  * Screen Recorder Application
@@ -36,37 +27,100 @@ function App() {
   
   // Services
   const videoProcessorRef = useRef<VideoProcessorService>(new VideoProcessorService());
+  const storageServiceRef = useRef<StorageService>(new StorageService());
   
   /**
-   * Get all videos metadata from IndexedDB
+   * Get all videos metadata from StorageService
    */
   const getAllVideosMetadata = useCallback(async (): Promise<VideoData[]> => {
     try {
-      const db = await openDatabase();
-      const transaction = db.transaction(['videos'], 'readonly');
-      const store = transaction.objectStore('videos');
-      const request = store.getAll();
-      
-      return new Promise((resolve, reject) => {
-        request.onsuccess = () => {
-          const videos = request.result as VideoData[];
-          resolve(videos.map(video => ({
-            id: video.id,
-            datetime: video.datetime,
-            title: video.title,
-          })));
-        };
-        
-        request.onerror = () => {
-          reject(request.error);
-        };
-      });
+      const videos = await storageServiceRef.current.getAllVideos();
+      return videos.map(video => ({
+        id: video.id,
+        datetime: video.datetime,
+        title: video.title,
+      }));
     } catch (error) {
-      console.error('Error getting videos from IndexedDB:', error);
+      console.error('Error getting videos:', error);
       setError(`Failed to retrieve videos: ${error instanceof Error ? error.message : String(error)}`);
       return [];
     }
   }, []);
+  
+  /**
+   * Handle FFmpeg progress updates
+   */
+  const handleFFmpegProgress: ProgressCallback = useCallback((progress) => {
+    setFfmpegProgress(progress);
+  }, []);
+  
+  /**
+   * Handle FFmpeg processing cancellation
+   */
+  const handleFFmpegCancel = useCallback(() => {
+    if (videoProcessorRef.current) {
+      videoProcessorRef.current.cancelProcessing();
+      setStatus('Cancelling FFmpeg processing...');
+    }
+  }, []);
+
+  /**
+   * Handle when FFmpeg processing is cancelled
+   */
+  const handleFFmpegCancelled = useCallback(() => {
+    setIsProcessingFFmpeg(false);
+    setFfmpegCancellable(false);
+    setStatus('FFmpeg processing cancelled');
+    setTimeout(() => setStatus('Ready'), 3000);
+  }, []);
+  
+  /**
+   * Download recorded video as MP4
+   */
+  const downloadMP4 = useCallback(async (chunks: Blob[], _videoId: string, title: string) => {
+    try {
+      if (useFFmpeg) {
+        setIsProcessingFFmpeg(true);
+        setFfmpegCancellable(true);
+        setFfmpegProgress(0);
+        setStatus('Processing with FFmpeg...');
+        
+        // Process video with FFmpeg
+        await videoProcessorRef.current.downloadMP4(
+          chunks,
+          title,
+          true, // useFFmpeg
+          handleFFmpegProgress,
+          handleFFmpegCancelled // Use the cancellation handler
+        );
+        
+        setStatus('Download complete');
+        setTimeout(() => setStatus('Ready'), 3000);
+        setIsProcessingFFmpeg(false);
+        setFfmpegCancellable(false);
+      } else {
+        // Direct download without FFmpeg processing
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${title}.webm`;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setStatus('Download complete');
+        setTimeout(() => setStatus('Ready'), 3000);
+      }
+    } catch (error) {
+      console.error('Error in downloadMP4:', error);
+      setError(`Failed to process video: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus('Error');
+      setIsProcessingFFmpeg(false);
+      setFfmpegCancellable(false);
+    }
+  }, [useFFmpeg, handleFFmpegProgress, handleFFmpegCancelled]);
   
   /**
    * Display stored videos
@@ -82,9 +136,7 @@ function App() {
   }, [getAllVideosMetadata]);
   
   // References for recording
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const mediaCaptureRef = useRef<MediaCaptureService>(new MediaCaptureService());
   const timerRef = useRef<number | null>(null);
 
   /**
@@ -127,6 +179,54 @@ function App() {
   }, [displayStoredVideos]);
 
   /**
+   * Setup media capture event handlers
+   */
+  useEffect(() => {
+    const mediaCaptureService = mediaCaptureRef.current;
+    
+    // Handle recording stopped event
+    const handleRecordingStopped = async (chunks: Blob[], videoInfo: VideoInfo) => {
+      setIsRecording(false);
+      downloadMP4(chunks, videoInfo.videoId, videoInfo.title);
+      try {
+        await storageServiceRef.current.saveVideo(chunks, videoInfo);
+        displayStoredVideos();
+      } catch (error) {
+        console.error('Error saving video:', error);
+        setError(`Failed to save video: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      setStatus('Ready');
+      
+      // Clean up resources
+      mediaCaptureService.cleanup();
+    };
+    
+    // Handle recording errors
+    const handleError = (errorMessage: string) => {
+      console.error('Media capture error:', errorMessage);
+      setError(errorMessage);
+      setStatus('Error');
+      setIsRecording(false);
+    };
+    
+    // Register event listeners
+    mediaCaptureService.on(MediaCaptureEvents.RECORDING_STOPPED, handleRecordingStopped);
+    mediaCaptureService.on(MediaCaptureEvents.ERROR, handleError);
+    
+    // Cleanup event listeners on component unmount
+    return () => {
+      mediaCaptureService.off(MediaCaptureEvents.RECORDING_STOPPED, handleRecordingStopped);
+      mediaCaptureService.off(MediaCaptureEvents.ERROR, handleError);
+      
+      // Stop any active recording when component unmounts
+      if (mediaCaptureService.isRecording()) {
+        mediaCaptureService.stopRecording();
+        mediaCaptureService.cleanup();
+      }
+    };
+  }, [displayStoredVideos, downloadMP4]);
+  
+  /**
    * Start screen recording
    */
   const startRecording = async () => {
@@ -152,34 +252,10 @@ function App() {
         title: `Screen Recording - ${beginTime}`,
       };
       
-      // Request screen capture with audio
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
+      // Start recording using the media capture service
+      await mediaCaptureRef.current.startRecording(videoInfo);
       
-      // Create and configure MediaRecorder
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      
-      // Handle recording data
-      recorder.ondataavailable = (e) => {
-        chunksRef.current.push(e.data);
-      };
-      
-      // Handle recording stop
-      recorder.onstop = () => {
-        downloadMP4(chunksRef.current, videoInfo.videoId, videoInfo.title);
-        saveVideoToIndexedDB(chunksRef.current, videoInfo);
-        setStatus('Ready');
-      };
-      
-      // Store references
-      recorderRef.current = recorder;
-      streamRef.current = stream;
-      
-      // Start recording
-      recorder.start();
+      // Update UI state
       setIsRecording(true);
       setRecordingTime(0);
       setStatus('Recording');
@@ -198,22 +274,11 @@ function App() {
     try {
       setStatus('Stopping...');
       
-      // Stop MediaRecorder if exists
-      if (recorderRef.current) {
-        recorderRef.current.stop();
-        
-        // Stop all tracks in the stream
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
-        }
-        
-        // Clear references
-        recorderRef.current = null;
-        streamRef.current = null;
-        
-        // Update state
-        setIsRecording(false);
-      }
+      // Stop MediaRecorder via the service
+      mediaCaptureRef.current.stopRecording();
+      
+      // Note: state will be updated in the event handler when recording is fully stopped
+      // to ensure we process the chunks after they are fully available
     } catch (error) {
       console.error('Error stopping recording:', error);
       setError(`Failed to stop recording: ${error instanceof Error ? error.message : String(error)}`);
@@ -222,202 +287,48 @@ function App() {
     }
   };
 
-  /**
-   * Handle FFmpeg progress updates
-   */
-  const handleFFmpegProgress: ProgressCallback = useCallback((progress) => {
-    setFfmpegProgress(progress);
-  }, []);
+  // These functions have been moved before useEffect
 
-  /**
-   * Handle FFmpeg processing cancellation
-   */
-  const handleFFmpegCancel = useCallback(() => {
-    if (videoProcessorRef.current) {
-      videoProcessorRef.current.cancelProcessing();
-      setStatus('Cancelling FFmpeg processing...');
-    }
-  }, []);
-
-  /**
-   * Handle when FFmpeg processing is cancelled
-   */
-  const handleFFmpegCancelled = useCallback(() => {
-    setIsProcessingFFmpeg(false);
-    setFfmpegCancellable(false);
-    setStatus('FFmpeg processing cancelled');
-    setTimeout(() => setStatus('Ready'), 3000);
-  }, []);
-
-  /**
-   * Download recorded video as MP4
-   */
-  const downloadMP4 = async (chunks: Blob[], _videoId: string, title: string) => {
-    try {
-      if (useFFmpeg) {
-        setIsProcessingFFmpeg(true);
-        setFfmpegCancellable(true);
-        setFfmpegProgress(0);
-        setStatus('Processing with FFmpeg...');
-      } else {
-        setStatus('Preparing download...');
-      }
-      
-      // Use VideoProcessorService to handle download with potential FFmpeg transcoding
-      await videoProcessorRef.current.downloadMP4(
-        chunks, 
-        title, 
-        useFFmpeg, 
-        useFFmpeg ? handleFFmpegProgress : undefined,
-        useFFmpeg ? handleFFmpegCancelled : undefined
-      );
-      
-      setIsProcessingFFmpeg(false);
-      setFfmpegCancellable(false);
-      setStatus('Ready');
-      setError('');
-    } catch (error) {
-      console.error('Error downloading video:', error);
-      setIsProcessingFFmpeg(false);
-      setFfmpegCancellable(false);
-      
-      // Don't show error message if operation was cancelled (it's expected)
-      if (error instanceof Error && error.message === 'Operation cancelled') {
-        setStatus('Processing cancelled');
-        setTimeout(() => setStatus('Ready'), 3000);
-      } else {
-        setError(`Failed to download video: ${error instanceof Error ? error.message : String(error)}`);
-        setStatus('Error');
-      }
-    }
-  };
+  // The downloadMP4 function has been moved and declared above with useCallback
   
-  /**
-   * Open IndexedDB database
-   */
-  const openDatabase = (): Promise<IDBDatabase> => {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open('screenRecordingsDB', 1);
-      
-      request.onsuccess = (event) => {
-        resolve((event.target as IDBOpenDBRequest).result);
-      };
-      
-      request.onerror = (event) => {
-        reject((event.target as IDBOpenDBRequest).error);
-      };
-      
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains('videos')) {
-          db.createObjectStore('videos', { keyPath: 'id' });
-        }
-      };
-    });
-  };
+  // openDatabase method is now handled by StorageService
   
-  /**
-   * Save video to IndexedDB
-   */
-  const saveVideoToIndexedDB = async (chunks: Blob[], videoInfo: VideoInfo) => {
-    try {
-      // Clone chunks to avoid issues with structured cloning
-      const chunksClone = chunks.map(chunk => chunk);
-      
-      // Open database
-      const db = await openDatabase();
-      const transaction = db.transaction(['videos'], 'readwrite');
-      const store = transaction.objectStore('videos');
-      
-      // Create video data object with videoId used as the id property
-      const videoData: VideoData = {
-        id: videoInfo.videoId, // Using videoId here as the unique key in IndexedDB
-        datetime: videoInfo.beginTime,
-        title: videoInfo.title,
-        chunks: chunksClone
-      };
-      
-      // Add to store
-      const request = store.add(videoData);
-      request.onerror = () => {
-        console.error('Error saving video to IndexedDB:', request.error);
-        setError('Failed to save video to local storage');
-      };
-      
-      // Wait for transaction to complete
-      await new Promise<void>((resolve, reject) => {
-        transaction.oncomplete = () => {
-          // Update the stored videos list
-          displayStoredVideos();
-          setError('');
-          resolve();
-        };
-        
-        transaction.onerror = () => {
-          reject(transaction.error);
-        };
-      });
-      
-      console.log('Video saved to IndexedDB successfully');
-    } catch (error) {
-      console.error('Error saving to IndexedDB:', error);
-      setError(`Failed to save video: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
+  // saveVideoToIndexedDB method is now handled by StorageService
   
   // getAllVideosMetadata function is now defined at the top of the component
   
 
   
   /**
-   * Remove video from IndexedDB
+   * Remove video from storage
    */
   const removeVideoFromDB = async (videoId: string) => {
     try {
-      const db = await openDatabase();
-      const transaction = db.transaction(['videos'], 'readwrite');
-      const store = transaction.objectStore('videos');
-      const request = store.delete(videoId);
-      
-      request.onsuccess = () => {
-        // Update the stored videos list
-        displayStoredVideos();
-      };
-      
-      request.onerror = () => {
-        setError(`Failed to delete video: ${request.error}`);
-      };
+      await storageServiceRef.current.removeVideo(videoId);
+      // Update the stored videos list
+      displayStoredVideos();
     } catch (error) {
-      console.error('Error removing video from IndexedDB:', error);
+      console.error('Error removing video:', error);
       setError(`Failed to delete video: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
   
   /**
-   * Download video from IndexedDB
+   * Download video from storage
    */
   const downloadVideoFromDB = async (videoId: string) => {
     try {
-      const db = await openDatabase();
-      const transaction = db.transaction(['videos'], 'readonly');
-      const store = transaction.objectStore('videos');
-      const request = store.get(videoId);
+      const videoData = await storageServiceRef.current.getVideo(videoId);
       
-      request.onsuccess = () => {
-        if (request.result && request.result.chunks) {
-          downloadMP4(
-            request.result.chunks,
-            request.result.id,
-            request.result.title
-          );
-        }
-      };
-      
-      request.onerror = () => {
-        setError(`Failed to download video: ${request.error}`);
-      };
+      if (videoData && videoData.chunks) {
+        setStatus('Preparing download...');
+        // Process and download the video
+        await downloadMP4(videoData.chunks, videoData.id, videoData.title);
+      } else {
+        setError('Video data not found or corrupt');
+      }
     } catch (error) {
-      console.error('Error downloading video from IndexedDB:', error);
+      console.error('Error downloading video:', error);
       setError(`Failed to download video: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
