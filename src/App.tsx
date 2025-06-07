@@ -6,7 +6,7 @@ import { MediaCaptureService, MediaCaptureEvents } from './services/media-captur
 import type { VideoInfo, VideoData } from './types/recording';
 import StoredVideosList from './components/StoredVideosList';
 import RecordingPanel from './components/RecordingPanel';
-
+import Instructions from './components/Instructions';
 
 // Using VideoInfo and VideoData interfaces from './types/recording'
 
@@ -533,17 +533,7 @@ function App() {
           onMicrophoneSelected={(deviceId) => setSelectedMicrophoneId(deviceId)}
         />
         
-        <div className="instructions">
-          <h3>How to Use:</h3>
-          <ol>
-            <li>Click "Start Recording"</li>
-            <li>Choose what you want to share (screen, window, or tab)</li>
-            <li>Click "Stop Recording" when finished</li>
-            <li>WebM file will download immediately</li>
-            <li>MP4 conversion will start automatically</li>
-          </ol>
-          <p className="note">Note: Keep this tab open while recording. Closing or navigating away will stop the recording.</p>
-        </div>
+        <Instructions />
         
         <div className="stored-videos-container">
           <StoredVideosList
