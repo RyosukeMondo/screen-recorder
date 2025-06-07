@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
+import { VideoProcessorService } from './services/videoProcessor';
+import type { ProgressCallback } from './services/videoProcessor';
+
 
 // Define TypeScript interfaces for type safety
 interface VideoInfo {
@@ -26,6 +29,12 @@ function App() {
   const [status, setStatus] = useState<string>('Ready');
   const [error, setError] = useState<string>('');
   const [storedVideos, setStoredVideos] = useState<VideoData[]>([]);
+  const [useFFmpeg, setUseFFmpeg] = useState<boolean>(false);
+  const [ffmpegProgress, setFfmpegProgress] = useState<number>(0);
+  const [isProcessingFFmpeg, setIsProcessingFFmpeg] = useState<boolean>(false);
+  
+  // Services
+  const videoProcessorRef = useRef<VideoProcessorService>(new VideoProcessorService());
   
   /**
    * Get all videos metadata from IndexedDB
@@ -213,39 +222,41 @@ function App() {
   };
 
   /**
+   * Handle FFmpeg progress updates
+   */
+  const handleFFmpegProgress: ProgressCallback = useCallback((progress) => {
+    setFfmpegProgress(progress);
+  }, []);
+
+  /**
    * Download recorded video as MP4
    */
-  const downloadMP4 = (chunks: Blob[], _videoId: string, title: string) => {
+  const downloadMP4 = async (chunks: Blob[], _videoId: string, title: string) => {
     try {
-      // Create blob from chunks
-      const blob = new Blob(chunks, { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
+      if (useFFmpeg) {
+        setIsProcessingFFmpeg(true);
+        setFfmpegProgress(0);
+        setStatus('Processing with FFmpeg...');
+      } else {
+        setStatus('Preparing download...');
+      }
       
-      // Generate filename with timestamp
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const fileName = `${year}-${month}-${day}_${hours}-${minutes}_${title}.mp4`;
+      // Use VideoProcessorService to handle download with potential FFmpeg transcoding
+      await videoProcessorRef.current.downloadMP4(
+        chunks, 
+        title, 
+        useFFmpeg, 
+        useFFmpeg ? handleFFmpegProgress : undefined
+      );
       
-      // Create download link and trigger download
-      const a = document.createElement('a');
-      document.body.appendChild(a);
-      a.style.display = 'none';
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      
-      // Clean up
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
+      setIsProcessingFFmpeg(false);
+      setStatus('Ready');
       setError('');
     } catch (error) {
       console.error('Error downloading video:', error);
+      setIsProcessingFFmpeg(false);
       setError(`Failed to download video: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus('Error');
     }
   };
   
@@ -399,6 +410,21 @@ function App() {
                 </div>
               )}
             </div>
+            
+            {/* FFmpeg Processing Progress Bar */}
+            {isProcessingFFmpeg && (
+              <div className="ffmpeg-progress-container">
+                <div className="ffmpeg-progress-label">
+                  FFmpeg Processing: {Math.round(ffmpegProgress * 100)}%
+                </div>
+                <div className="ffmpeg-progress-bar">
+                  <div 
+                    className="ffmpeg-progress-fill" 
+                    style={{ width: `${ffmpegProgress * 100}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
           </div>
 
           {error && <div className="error-message">{error}</div>}
@@ -419,6 +445,20 @@ function App() {
                 Stop Recording
               </button>
             )}
+            
+            <div className="encoding-options">
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={useFFmpeg}
+                  onChange={(e) => setUseFFmpeg(e.target.checked)}
+                  disabled={isRecording}
+                />
+                <span className="toggle-slider"></span>
+                <span className="toggle-label">Use FFmpeg Encoding</span>
+              </label>
+              {useFFmpeg && <div className="encoding-note">Using FFmpeg for better compatibility (may take longer)</div>}
+            </div>
           </div>
         </div>
         
