@@ -27,4 +27,6 @@ export interface VideoData {
   datetime: string;
   title: string;
   chunks?: Blob[];
+  isProcessing?: boolean;
+  processingProgress?: number;
 }

@@ -21,12 +21,13 @@ export class EncodingJob {
   private currentFrame = 0;
   private totalFrames = 0;
   private estimatedDuration = 0; // Used for progress calculation
-  private lastLogMessage = ''; // Used to parse FFmpeg logs
+  private lastLogMessage = ''; // Stores latest FFmpeg log message for debugging
   private isCancelled = false;
   private isProcessing = false;
   private abortController: AbortController;
   private progressCallback?: ProgressCallback | null;
   private cancellationCallback?: CancellationCallback | null;
+  private safetyTimeoutMs: number = 180000; // Default to 3 minutes timeout
   
   constructor(
     progressCallback?: ProgressCallback | null,
@@ -136,7 +137,7 @@ export class EncodingJob {
         console.log(message);
         
         // Extract timing information
-        this.extractTimeFromLog(message);
+        this.extractTimeFromLog(this.lastLogMessage);
       });
       
       // Setup progress handler
@@ -161,6 +162,37 @@ export class EncodingJob {
   }
   
   /**
+   * Pre-analyze video to extract metadata before encoding
+   * This helps determine duration, fps and frame count more reliably
+   */
+  private async preAnalyzeVideo(inputFileName: string): Promise<void> {
+    if (!this.ffmpeg) throw new Error('FFmpeg not initialized');
+    
+    try {
+      console.log('Pre-analyzing video metadata...');
+      
+      // Run FFmpeg with -i flag to just get file info
+      await this.ffmpeg.exec([
+        '-i', inputFileName
+      ]).catch((ffmpegError) => {
+        // This will intentionally error but give us file metadata in logs
+        // The error message contains valuable information about the input file
+        console.log('Pre-analysis complete - metadata extracted from error output');
+        // Log the error details for debugging purposes
+        console.debug('FFmpeg info output:', ffmpegError);
+      });
+      
+      // If we still don't have a total frame estimate, set a reasonable default
+      if (this.totalFrames <= 0) {
+        console.log('Setting default frame count estimate after pre-analysis');
+        this.totalFrames = 300; // Conservative default
+      }
+    } catch (err) {
+      console.log('Pre-analysis failed, continuing with defaults', err);
+    }
+  }
+  
+  /**
    * Transcode blobs to MP4 using FFmpeg
    */
   private async transcodeToMp4(chunks: Blob[]): Promise<Blob> {
@@ -180,6 +212,9 @@ export class EncodingJob {
         await new Blob(chunks, { type: 'video/webm' }).arrayBuffer()
       );
       await this.ffmpeg.writeFile(inputFileName, webmFile);
+      
+      // Pre-analyze video to get duration and frame count
+      await this.preAnalyzeVideo(inputFileName);
       
       // Get signal for aborting
       const signal = this.abortController.signal;
@@ -209,11 +244,11 @@ export class EncodingJob {
         // Safety timeout
         const safetyTimeout = setTimeout(() => {
           if (!this.isCancelled) {
-            console.log('FFmpeg safety timeout triggered');
+            console.log(`FFmpeg safety timeout triggered after ${this.safetyTimeoutMs/1000}s`);
             this.cancel();
             reject(new Error('Operation timed out'));
           }
-        }, 60000); // 1 minute timeout
+        }, this.safetyTimeoutMs); // Configurable timeout based on video complexity
         
         // Run FFmpeg command
         if (this.ffmpeg) {
@@ -299,43 +334,88 @@ export class EncodingJob {
     const frameBasedProgress = 0.1 + Math.min(this.currentFrame, 300) / 300 * 0.89;
     return Math.min(frameBasedProgress, 0.99);
   }
-  
+
   /**
-   * Extract time information and frame count from FFmpeg log message
+   * Extract timing information from FFmpeg log
    */
-  private extractTimeFromLog(logMessage: string): void {
-    // Extract frame count
-    const frameMatch = /frame=\\s*(\\d+)/.exec(logMessage || '');
+  private extractTimeFromLog(message: string): void {
+    // Extract current frame information
+    const frameMatch = message.match(/frame=\s*(\d+)/);
+    if (frameMatch && frameMatch[1]) {
+      this.currentFrame = parseInt(frameMatch[1], 10);
+    }
     
-    // Extract FPS
-    const fpsMatch = /fps=\\s*([\\d.]+)/.exec(logMessage || '');
-    
-    // Extract duration
-    const durationMatch = /Duration: ([\\d:.]+)/.exec(logMessage || '');
-    
-    // Update total frames estimate if we have duration and fps
-    if (durationMatch && fpsMatch) {
-      const fps = parseFloat(fpsMatch[1]);
-      const timeParts = durationMatch[1].split(':');
-      
-      if (timeParts.length === 3) {
-        const hours = parseInt(timeParts[0], 10);
-        const minutes = parseInt(timeParts[1], 10);
-        const seconds = parseFloat(timeParts[2]);
+    // Extract total duration if available
+    const durationMatch = message.match(/Duration:\s*([\d:.]+)/);
+    if (durationMatch && durationMatch[1] && !this.estimatedDuration) {
+      const durationParts = durationMatch[1].split(':');
+      if (durationParts.length === 3) {
+        const hours = parseInt(durationParts[0], 10) || 0;
+        const minutes = parseInt(durationParts[1], 10) || 0;
+        const seconds = parseFloat(durationParts[2]) || 0;
+        this.estimatedDuration = hours * 3600 + minutes * 60 + seconds;
         
-        const durationInSeconds = (hours * 3600) + (minutes * 60) + seconds;
-        this.totalFrames = Math.round(durationInSeconds * fps);
-        this.estimatedDuration = durationInSeconds;
-        console.log(`Estimated total frames: ${this.totalFrames} (${durationInSeconds}s at ${fps} fps)`);
+        // Rough estimation of total frames based on fps from video stream
+        if (this.totalFrames <= 0) {
+          // Default to 30fps if we can't determine it
+          this.totalFrames = Math.round(this.estimatedDuration * 30);
+        }
       }
     }
     
-    // Update current frame if available
-    if (frameMatch) {
-      const frameCount = parseInt(frameMatch[1], 10);
-      if (!isNaN(frameCount)) {
-        this.currentFrame = frameCount;
+    // Look for fps information in video stream metadata
+    const fpsMatch = message.match(/(\d+(?:\.\d+)?)\s*fps/);
+    if (fpsMatch && fpsMatch[1]) {
+      const fps = parseFloat(fpsMatch[1]);
+      if (fps > 0 && this.estimatedDuration && this.totalFrames <= 0) {
+        this.totalFrames = Math.round(this.estimatedDuration * fps);
+        console.log(`Estimated total frames: ${this.totalFrames} (${fps} fps, ${this.estimatedDuration}s)`);
       }
     }
+    
+    // Look specifically for Stream information that contains fps
+    if (message.includes('Video:') && message.includes('fps')) {
+      const streamFpsMatch = message.match(/(\d+(?:\.\d+)?)\s*fps/);
+      if (streamFpsMatch && streamFpsMatch[1]) {
+        const streamFps = parseFloat(streamFpsMatch[1]);
+        if (streamFps > 0 && this.estimatedDuration) {
+          this.totalFrames = Math.round(this.estimatedDuration * streamFps);
+          console.log(`Stream info - Total frames: ${this.totalFrames} (${streamFps} fps, ${this.estimatedDuration}s)`);
+        }
+      }
+    }
+    
+    // Handle special case for webm files that might report N/A duration
+    if (message.includes('Duration: N/A') && message.includes('Video:')) {
+      // Try to get resolution and use it as a complexity factor
+      const resolutionMatch = message.match(/(\d+)x(\d+)/);
+      if (resolutionMatch && resolutionMatch[1] && resolutionMatch[2]) {
+        const width = parseInt(resolutionMatch[1]);
+        const height = parseInt(resolutionMatch[2]);
+        const pixelCount = width * height;
+        
+        // Use pixel count as a complexity heuristic for timeouts
+        // Higher resolution = more processing time needed
+        const complexityFactor = Math.min(pixelCount / (1920 * 1080), 4); // Cap at 4x 1080p complexity
+        
+        // For WebM with unknown duration, set a default frame count based on resolution
+        this.totalFrames = Math.max(this.totalFrames, Math.round(1800 * complexityFactor)); // ~60s at 30fps adjusted for complexity
+        
+        // Adjust safety timeout based on resolution complexity
+        this.adjustSafetyTimeout(complexityFactor);
+        console.log(`WebM with N/A duration - Estimated frames: ${this.totalFrames} (based on ${width}x${height} resolution)`);
+      }
+    }
+  }
+
+  /**
+   * Adjusts the safety timeout based on video complexity
+   */
+  private adjustSafetyTimeout(complexityFactor: number): void {
+    // Base timeout of 3 minutes (180000ms)
+    // Increase by complexity factor (with a maximum of 10 minutes for very complex videos)
+    const baseTimeout = 180000; // 3 minutes
+    this.safetyTimeoutMs = Math.min(baseTimeout * complexityFactor, 600000); // Cap at 10 minutes
+    console.log(`Adjusted safety timeout to ${this.safetyTimeoutMs/1000} seconds based on complexity factor ${complexityFactor.toFixed(2)}`);
   }
 }

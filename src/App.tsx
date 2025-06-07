@@ -3,7 +3,6 @@ import './App.css';
 import { VideoProcessorService } from './services/video-processor.service';
 import { StorageService } from './services/storage';
 import { MediaCaptureService, MediaCaptureEvents } from './services/media-capture.service';
-import type { ProgressCallback } from './services/encoding-job';
 import type { VideoInfo, VideoData } from './types/recording';
 
 
@@ -21,9 +20,7 @@ function App() {
   const [error, setError] = useState<string>('');
   const [storedVideos, setStoredVideos] = useState<VideoData[]>([]);
   const [useFFmpeg, setUseFFmpeg] = useState<boolean>(false);
-  const [ffmpegProgress, setFfmpegProgress] = useState<number>(0);
-  const [isProcessingFFmpeg, setIsProcessingFFmpeg] = useState<boolean>(false);
-  const [ffmpegCancellable, setFfmpegCancellable] = useState<boolean>(false);
+  // Global FFmpeg state is no longer needed as we track per video
   
   // Services
   const videoProcessorRef = useRef<VideoProcessorService>(new VideoProcessorService());
@@ -48,79 +45,129 @@ function App() {
   }, []);
   
   /**
-   * Handle FFmpeg progress updates
+   * Handle FFmpeg processing cancellation for a specific video
    */
-  const handleFFmpegProgress: ProgressCallback = useCallback((progress) => {
-    setFfmpegProgress(progress);
-  }, []);
-  
-  /**
-   * Handle FFmpeg processing cancellation
-   */
-  const handleFFmpegCancel = useCallback(() => {
+  const handleCancelProcessing = useCallback((videoId: string) => {
     if (videoProcessorRef.current) {
       videoProcessorRef.current.cancelProcessing();
       setStatus('Cancelling FFmpeg processing...');
+      
+      // Reset the processing state for this video
+      setStoredVideos(prev => prev.map(v => 
+        v.id === videoId ? { ...v, isProcessing: false, processingProgress: 0 } : v
+      ));
+    }
+  }, []);
+  
+  /**
+   * Download WebM video directly
+   */
+  const downloadWebM = useCallback((chunks: Blob[], title: string) => {
+    try {
+      // Direct download as WebM
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title}.webm`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus('WebM download complete');
+      setTimeout(() => setStatus('Ready'), 3000);
+    } catch (error) {
+      console.error('Error in downloadWebM:', error);
+      setError(`Failed to download WebM: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus('Error');
     }
   }, []);
 
   /**
-   * Handle when FFmpeg processing is cancelled
+   * Process video to MP4 using FFmpeg
    */
-  const handleFFmpegCancelled = useCallback(() => {
-    setIsProcessingFFmpeg(false);
-    setFfmpegCancellable(false);
-    setStatus('FFmpeg processing cancelled');
-    setTimeout(() => setStatus('Ready'), 3000);
+  const processToMP4 = useCallback(async (videoId: string) => {
+    try {
+      const videoData = await storageServiceRef.current.getVideo(videoId);
+      
+      if (!videoData || !videoData.chunks) {
+        setError('Video data not found or corrupt');
+        return;
+      }
+      
+      // Update processing state for this specific video
+      setStoredVideos(prev => prev.map(v => 
+        v.id === videoId ? { ...v, isProcessing: true, processingProgress: 0 } : v
+      ));
+      
+      setStatus('Processing with FFmpeg...');
+      
+      // Create progress callback specific to this video ID
+      const progressCallback = (progress: number) => {
+        setStoredVideos(prev => prev.map(v => 
+          v.id === videoId ? { ...v, processingProgress: progress } : v
+        ));
+      };
+      
+      // Create cancellation callback specific to this video ID
+      const cancelCallback = () => {
+        setStoredVideos(prev => prev.map(v => 
+          v.id === videoId ? { ...v, isProcessing: false, processingProgress: 0 } : v
+        ));
+        setStatus('FFmpeg processing cancelled');
+        setTimeout(() => setStatus('Ready'), 3000);
+      };
+      
+      // Process video with FFmpeg
+      await videoProcessorRef.current.downloadMP4(
+        videoData.chunks,
+        videoData.title,
+        true, // useFFmpeg
+        progressCallback,
+        cancelCallback
+      );
+      
+      // Reset processing state
+      setStoredVideos(prev => prev.map(v => 
+        v.id === videoId ? { ...v, isProcessing: false, processingProgress: 1 } : v
+      ));
+      
+      setStatus('MP4 Download complete');
+      setTimeout(() => setStatus('Ready'), 3000);
+      
+      // After a moment, reset the progress display
+      setTimeout(() => {
+        setStoredVideos(prev => prev.map(v => 
+          v.id === videoId ? { ...v, processingProgress: 0 } : v
+        ));
+      }, 5000);
+      
+    } catch (error) {
+      console.error('Error in processToMP4:', error);
+      setError(`Failed to process video: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus('Error');
+      
+      // Reset processing state on error
+      setStoredVideos(prev => prev.map(v => 
+        v.id === videoId ? { ...v, isProcessing: false, processingProgress: 0 } : v
+      ));
+    }
   }, []);
   
   /**
-   * Download recorded video as MP4
+   * Download recorded video as MP4 (after recording)
    */
   const downloadMP4 = useCallback(async (chunks: Blob[], _videoId: string, title: string) => {
     try {
-      if (useFFmpeg) {
-        setIsProcessingFFmpeg(true);
-        setFfmpegCancellable(true);
-        setFfmpegProgress(0);
-        setStatus('Processing with FFmpeg...');
-        
-        // Process video with FFmpeg
-        await videoProcessorRef.current.downloadMP4(
-          chunks,
-          title,
-          true, // useFFmpeg
-          handleFFmpegProgress,
-          handleFFmpegCancelled // Use the cancellation handler
-        );
-        
-        setStatus('Download complete');
-        setTimeout(() => setStatus('Ready'), 3000);
-        setIsProcessingFFmpeg(false);
-        setFfmpegCancellable(false);
-      } else {
-        // Direct download without FFmpeg processing
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${title}.webm`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        setStatus('Download complete');
-        setTimeout(() => setStatus('Ready'), 3000);
-      }
+      // After recording, we now just download as WebM
+      downloadWebM(chunks, title);
     } catch (error) {
       console.error('Error in downloadMP4:', error);
       setError(`Failed to process video: ${error instanceof Error ? error.message : String(error)}`);
       setStatus('Error');
-      setIsProcessingFFmpeg(false);
-      setFfmpegCancellable(false);
     }
-  }, [useFFmpeg, handleFFmpegProgress, handleFFmpegCancelled]);
+  }, [downloadWebM]);
   
   /**
    * Display stored videos
@@ -314,7 +361,7 @@ function App() {
   };
   
   /**
-   * Download video from storage
+   * Download video from storage as WebM
    */
   const downloadVideoFromDB = async (videoId: string) => {
     try {
@@ -322,8 +369,8 @@ function App() {
       
       if (videoData && videoData.chunks) {
         setStatus('Preparing download...');
-        // Process and download the video
-        await downloadMP4(videoData.chunks, videoData.id, videoData.title);
+        // Just use WebM download
+        downloadWebM(videoData.chunks, videoData.title);
       } else {
         setError('Video data not found or corrupt');
       }
@@ -354,31 +401,7 @@ function App() {
               )}
             </div>
             
-            {/* FFmpeg Processing Progress Bar */}
-            {isProcessingFFmpeg && (
-              <div className="ffmpeg-progress-container">
-                <div className="ffmpeg-progress-label">
-                  FFmpeg Processing: {Math.round(ffmpegProgress * 100)}%
-                </div>
-                <div className="ffmpeg-progress-bar">
-                  <div 
-                    className="ffmpeg-progress-fill" 
-                    style={{ width: `${ffmpegProgress * 100}%` }}
-                  ></div>
-                </div>
-                
-                {/* Cancel button for FFmpeg processing */}
-                {ffmpegCancellable && (
-                  <button
-                    className="ffmpeg-cancel-button"
-                    onClick={handleFFmpegCancel}
-                    title="Cancel FFmpeg processing"
-                  >
-                    Cancel Processing
-                  </button>
-                )}
-              </div>
-            )}
+            {/* Global processing status is now shown per video */}
           </div>
 
           {error && <div className="error-message">{error}</div>}
@@ -440,20 +463,52 @@ function App() {
                     <p className="video-date">{video.datetime}</p>
                   </div>
                   <div className="video-actions">
-                    <button 
-                      className="download-button"
-                      onClick={() => downloadVideoFromDB(video.id)}
-                      title="Download"
-                    >
-                      Download
-                    </button>
-                    <button 
-                      className="delete-button"
-                      onClick={() => removeVideoFromDB(video.id)}
-                      title="Delete"
-                    >
-                      Delete
-                    </button>
+                    {/* Progress bar for this video if it's being processed */}
+                    {video.isProcessing && (
+                      <div className="video-progress-container">
+                        <div className="video-progress-label">
+                          MP4 Processing: {Math.round((video.processingProgress || 0) * 100)}%
+                        </div>
+                        <div className="video-progress-bar">
+                          <div 
+                            className="video-progress-fill" 
+                            style={{ width: `${(video.processingProgress || 0) * 100}%` }}
+                          ></div>
+                        </div>
+                        <button
+                          className="cancel-button"
+                          onClick={() => handleCancelProcessing(video.id)}
+                          title="Cancel Processing"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    
+                    <div className="button-group">
+                      <button 
+                        className="download-button"
+                        onClick={() => downloadVideoFromDB(video.id)}
+                        title="Download as WebM"
+                      >
+                        WebM
+                      </button>
+                      <button 
+                        className="mp4-button"
+                        onClick={() => processToMP4(video.id)}
+                        disabled={video.isProcessing}
+                        title="Convert to MP4 and download"
+                      >
+                        MP4
+                      </button>
+                      <button 
+                        className="delete-button"
+                        onClick={() => removeVideoFromDB(video.id)}
+                        title="Delete"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
