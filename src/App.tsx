@@ -4,6 +4,7 @@ import { VideoProcessorService } from './services/video-processor.service';
 import { StorageService } from './services/storage';
 import { MediaCaptureService, MediaCaptureEvents } from './services/media-capture.service';
 import type { VideoInfo, VideoData } from './types/recording';
+import StoredVideosList from './components/StoredVideosList';
 
 
 // Using VideoInfo and VideoData interfaces from './types/recording'
@@ -484,7 +485,7 @@ function App() {
                 className="record-button"
                 onClick={startRecording} 
               >
-                Start Recording
+                Start Recording2
               </button>
             ) : (
               <button 
@@ -512,69 +513,13 @@ function App() {
         </div>
         
         <div className="stored-videos-container">
-          <h3>Saved Recordings</h3>
-          {storedVideos.length === 0 ? (
-            <p>No recordings found in local storage.</p>
-          ) : (
-            <div className="videos-list">
-              {storedVideos.map((video) => (
-                <div key={video.id} className="video-item">
-                  <div className="video-info">
-                    <p className="video-title">{video.title}</p>
-                    <p className="video-date">{video.datetime}</p>
-                  </div>
-                  <div className="video-actions">
-                    {/* Progress bar for this video if it's being processed */}
-                    {video.isProcessing && (
-                      <div className="video-progress-container">
-                        <div className="video-progress-label">
-                          MP4 Processing: {Math.round((video.processingProgress || 0) * 100)}%
-                        </div>
-                        <div className="video-progress-bar">
-                          <div 
-                            className="video-progress-fill" 
-                            style={{ width: `${(video.processingProgress || 0) * 100}%` }}
-                          ></div>
-                        </div>
-                        <button
-                          className="cancel-button"
-                          onClick={() => handleCancelProcessing(video.id)}
-                          title="Cancel Processing"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                    
-                    <div className="button-group">
-                      <button 
-                        className="download-button"
-                        onClick={() => downloadVideoFromDB(video.id)}
-                        title="Download as WebM"
-                      >
-                        WebM
-                      </button>
-                      <button 
-                        className="mp4-button"
-                        onClick={() => processToMP4(video.id)}
-                        disabled={video.isProcessing}
-                        title="Convert to MP4 and download"
-                      >
-                        MP4
-                      </button>
-                      <button 
-                        className="delete-button"
-                        onClick={() => removeVideoFromDB(video.id)}
-                        title="Delete"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <StoredVideosList
+            videos={storedVideos}
+            onDownloadWebM={downloadVideoFromDB}
+            onDownloadMP4={processToMP4}
+            onDelete={removeVideoFromDB}
+            onCancelProcessing={handleCancelProcessing}
+          />
         </div>
       </main>
 

@@ -1,0 +1,166 @@
+.video-list {
+  margin-top: 20px;
+  width: 100%;
+}
+
+.video-list h2 {
+  color: #1a73e8;
+  margin-bottom: 16px;
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+
+.videos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.video-list-empty {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.video-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #f8f9fa;
+  padding: 16px 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease-in-out;
+}
+
+.video-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.12);
+}
+
+.video-info {
+  flex: 1;
+}
+
+.video-title {
+  font-weight: 500;
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.video-date {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.video-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.download-button, .mp4-button, .delete-button, .cancel-button {
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+
+.download-button {
+  background-color: #4caf50;
+  color: white;
+}
+
+.download-button:hover {
+  background-color: #388e3c;
+}
+
+.mp4-button {
+  background-color: #2196f3;
+  color: white;
+}
+
+.mp4-button:hover {
+  background-color: #1976d2;
+}
+
+.mp4-button:disabled {
+  background-color: #bbdefb;
+  cursor: not-allowed;
+}
+
+.delete-button {
+  background-color: #f44336;
+  color: white;
+}
+
+.delete-button:hover {
+  background-color: #d32f2f;
+}
+
+.cancel-button {
+  background-color: #ff9800;
+  color: white;
+  align-self: flex-end;
+  margin-top: 5px;
+}
+
+.cancel-button:hover {
+  background-color: #f57c00;
+}
+
+.video-progress-container {
+  width: 100%;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.video-progress-label {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.video-progress-bar {
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.video-progress-fill {
+  height: 100%;
+  background-color: #2196f3;
+  border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+  .video-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .video-actions {
+    width: 100%;
+    margin-top: 10px;
+  }
+  
+  .button-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
