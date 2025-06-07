@@ -45,10 +45,76 @@
   flex: 1;
 }
 
+.video-title-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .video-title {
   font-weight: 500;
   margin: 0 0 4px;
   font-size: 1rem;
+}
+
+.edit-title-button {
+  background-color: transparent;
+  border: none;
+  color: #1a73e8;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.edit-title-button:hover {
+  background-color: rgba(26, 115, 232, 0.1);
+}
+
+.video-title-edit {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.video-title-edit input {
+  width: 100%;
+  padding: 8px;
+  border: 2px solid #1a73e8;
+  border-radius: 4px;
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-save-button, .edit-cancel-button {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.edit-save-button {
+  background-color: #1a73e8;
+  color: white;
+}
+
+.edit-save-button:hover {
+  background-color: #0d66d0;
+}
+
+.edit-cancel-button {
+  background-color: #f1f3f4;
+  color: #5f6368;
+}
+
+.edit-cancel-button:hover {
+  background-color: #e8eaed;
 }
 
 .video-date {

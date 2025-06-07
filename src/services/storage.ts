@@ -159,4 +159,41 @@ export class StorageService {
       throw error;
     }
   }
+
+  /**
+   * Update video title in IndexedDB
+   */
+  async updateVideoTitle(videoId: string, newTitle: string): Promise<void> {
+    try {
+      // Get current video data
+      const videoData = await this.getVideo(videoId);
+      
+      if (!videoData) {
+        throw new Error('Video not found');
+      }
+      
+      // Update title
+      videoData.title = newTitle;
+      
+      // Save updated video data
+      const db = await this.openDatabase();
+      const transaction = db.transaction([this.storeName], 'readwrite');
+      const store = transaction.objectStore(this.storeName);
+      const request = store.put(videoData);
+      
+      return new Promise((resolve, reject) => {
+        request.onsuccess = () => {
+          db.close();
+          resolve();
+        };
+        
+        request.onerror = () => {
+          reject(request.error);
+        };
+      });
+    } catch (error) {
+      console.error('Error updating video title in IndexedDB:', error);
+      throw error;
+    }
+  }
 }

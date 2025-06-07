@@ -435,6 +435,59 @@ function App() {
   };
   
   /**
+   * Update video title in storage
+   * Implements the title update directly if the method is not available in the service
+   */
+  const updateVideoTitle = async (videoId: string, newTitle: string) => {
+    try {
+      setStatus('Updating title...');
+      
+      // Check if the updateVideoTitle method exists on the service
+      if (typeof storageServiceRef.current.updateVideoTitle === 'function') {
+        // Use the service method if available
+        await storageServiceRef.current.updateVideoTitle(videoId, newTitle);
+      } else {
+        // Fallback implementation if the method is not available
+        console.log('Using fallback title update implementation');
+        
+        // Get the video data
+        const videoData = await storageServiceRef.current.getVideo(videoId);
+        
+        if (!videoData) {
+          throw new Error('Video not found');
+        }
+        
+        // Update the title
+        videoData.title = newTitle;
+        
+        // Save the updated video data by removing and re-adding
+        await storageServiceRef.current.removeVideo(videoId);
+        
+        // Create a VideoInfo object from the VideoData
+        const videoInfo: VideoInfo = {
+          videoId: videoData.id,
+          beginTime: videoData.datetime,
+          title: newTitle
+        };
+        
+        // Re-save the video
+        if (videoData.chunks) {
+          await storageServiceRef.current.saveVideo(videoData.chunks, videoInfo);
+        }
+      }
+      
+      // Update the UI by refreshing the stored videos list
+      await displayStoredVideos();
+      setStatus('Title updated');
+      setTimeout(() => setStatus('Ready'), 2000);
+    } catch (error) {
+      console.error('Error updating video title:', error);
+      setError(`Failed to update title: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus('Error');
+    }
+  };
+  
+  /**
    * Download video from storage as WebM
    */
   const downloadVideoFromDB = async (videoId: string) => {
@@ -491,6 +544,7 @@ function App() {
             onDownloadMP4={processToMP4}
             onDelete={removeVideoFromDB}
             onCancelProcessing={handleCancelProcessing}
+            onEditTitle={updateVideoTitle}
           />
         </div>
       </main>

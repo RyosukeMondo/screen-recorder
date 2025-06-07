@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { VideoData } from '../types/recording';
 import './StoredVideosList.css';
 
@@ -8,6 +8,7 @@ interface StoredVideosListProps {
   onDownloadMP4: (id: string) => void;
   onDelete: (id: string) => void;
   onCancelProcessing?: (id: string) => void;
+  onEditTitle?: (id: string, newTitle: string) => void;
 }
 
 /**
@@ -19,8 +20,40 @@ const StoredVideosList: React.FC<StoredVideosListProps> = ({
   onDownloadWebM,
   onDownloadMP4,
   onDelete,
-  onCancelProcessing
+  onCancelProcessing,
+  onEditTitle
 }) => {
+  // State for tracking which video is being edited and the new title value
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState<string>('');
+  
+  // Handle starting to edit a title
+  const handleEditStart = (video: VideoData) => {
+    setEditingId(video.id);
+    setEditTitle(video.title);
+  };
+  
+  // Handle saving the edited title
+  const handleSaveTitle = (id: string) => {
+    if (onEditTitle && editTitle.trim()) {
+      onEditTitle(id, editTitle.trim());
+      setEditingId(null);
+    }
+  };
+  
+  // Handle canceling the edit
+  const handleCancelEdit = () => {
+    setEditingId(null);
+  };
+  
+  // Handle key press in the edit input
+  const handleKeyPress = (e: React.KeyboardEvent, id: string) => {
+    if (e.key === 'Enter') {
+      handleSaveTitle(id);
+    } else if (e.key === 'Escape') {
+      handleCancelEdit();
+    }
+  };
   if (videos.length === 0) {
     return (
       <div className="video-list-empty">
@@ -36,7 +69,46 @@ const StoredVideosList: React.FC<StoredVideosListProps> = ({
         {videos.map((video) => (
           <div className="video-item" key={video.id}>
             <div className="video-info">
-              <p className="video-title">{video.title}</p>
+              {editingId === video.id ? (
+                <div className="video-title-edit">
+                  <input 
+                    type="text" 
+                    value={editTitle} 
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onKeyDown={(e) => handleKeyPress(e, video.id)}
+                    autoFocus
+                  />
+                  <div className="edit-actions">
+                    <button 
+                      className="edit-save-button" 
+                      onClick={() => handleSaveTitle(video.id)}
+                      title="Save title"
+                    >
+                      Save
+                    </button>
+                    <button 
+                      className="edit-cancel-button" 
+                      onClick={handleCancelEdit}
+                      title="Cancel editing"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="video-title-container">
+                  <p className="video-title">{video.title}</p>
+                  {onEditTitle && (
+                    <button 
+                      className="edit-title-button" 
+                      onClick={() => handleEditStart(video)}
+                      title="Edit title"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+              )}
               <p className="video-date">{video.datetime}</p>
             </div>
             <div className="video-actions">
