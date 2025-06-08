@@ -182,10 +182,18 @@ export class EncodingJob {
         console.debug('FFmpeg info output:', ffmpegError);
       });
       
-      // If we still don't have a total frame estimate, set a reasonable default
+      // If we still don't have a total frame estimate, set a reasonable default based on duration
       if (this.totalFrames <= 0) {
-        console.log('Setting default frame count estimate after pre-analysis');
-        this.totalFrames = 300; // Conservative default
+        const fps = 30; // Assume 30fps as default if we couldn't detect it
+        // If we have duration, use it for better estimation, otherwise use a large enough default
+        if (this.estimatedDuration > 0) {
+          this.totalFrames = Math.ceil(this.estimatedDuration * fps);
+          console.log(`Setting frame count estimate based on duration: ${this.totalFrames} frames (${this.estimatedDuration}s at ${fps}fps)`);
+        } else {
+          // No duration info - set a high enough default for most common usage (10min video)
+          this.totalFrames = 18000; // 10min at 30fps
+          console.log(`No duration info available. Setting default frame count to ${this.totalFrames}`);
+        }
       }
     } catch (err) {
       console.log('Pre-analysis failed, continuing with defaults', err);
@@ -331,7 +339,10 @@ export class EncodingJob {
     }
     
     // Fall back to frame-based heuristic
-    const frameBasedProgress = 0.1 + Math.min(this.currentFrame, 300) / 300 * 0.89;
+    // Always ensure the total frames is at least the current frame count + some headroom
+    // This handles cases where our initial estimate was too low
+    const effectiveTotalFrames = Math.max(this.totalFrames, Math.ceil(this.currentFrame * 1.1));
+    const frameBasedProgress = 0.1 + (this.currentFrame / effectiveTotalFrames) * 0.89;
     return Math.min(frameBasedProgress, 0.99);
   }
 
